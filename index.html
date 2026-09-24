@@ -282,12 +282,14 @@ let aiP = null;
 async function loadAI(setMsg){
   if (!aiP) aiP = (async () => {
     setMsg('AI 모델 불러오는 중… (처음 한 번만, 약 8MB)');
-    const T = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3');
+    let T;
+    try{ T = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1'); }
+    catch(e){ throw new Error('모델 라이브러리를 불러오지 못했어요 (' + (e && e.message ? e.message : '네트워크 오류') + ')'); }
     const id = 'Xenova/swin2SR-lightweight-x2-64';
-    let up = null, dev = 'wasm';
-    if (navigator.gpu){ try{ up = await T.pipeline('image-to-image', id, {device:'webgpu', dtype:'fp32'}); dev = 'webgpu'; }catch(e){} }
-    if (!up) up = await T.pipeline('image-to-image', id, {dtype:'q8'});
-    return {T, up, dev, id};
+    let up;
+    try{ up = await T.pipeline('image-to-image', id, {dtype:'q8'}); }
+    catch(e){ throw new Error('AI 모델을 준비하지 못했어요 (' + (e && e.message ? e.message : '알 수 없는 오류') + ')'); }
+    return {T, up, id};
   })().catch(e => { aiP = null; throw e; });
   return aiP;
 }
@@ -304,11 +306,7 @@ async function aiUpscale(base, setMsg){
     for (let i = 0, j = 0; i < px.length; i += 4){ rgb[j++] = px[i]; rgb[j++] = px[i+1]; rgb[j++] = px[i+2]; }
     let res;
     try{ res = await m.up(new RawImage(rgb, TS, TS, 3)); }
-    catch(e){
-      if (m.dev !== 'webgpu') throw e;
-      m.up = await m.T.pipeline('image-to-image', m.id, {dtype:'q8'}); m.dev = 'wasm';
-      res = await m.up(new RawImage(rgb, TS, TS, 3));
-    }
+    catch(e){ throw new Error('AI 처리 중 오류가 났어요 (' + (e && e.message ? e.message : '알 수 없는 오류') + ')'); }
     const ow = cw*2, oh = ch*2, oi = new ImageData(ow, oh), rd = res.data, rw = res.width, rc = res.channels || 3;
     const ox = (cx - x0)*2, oy = (cy - y0)*2;
     for (let y = 0; y < oh; y++){
@@ -349,7 +347,8 @@ async function processShot(src, sw, sh, mirror, date){
         s = up; ssw = w = up.width; ssh = h = up.height; sm = false;
       }catch(e){
         console.error(e); mode = 1; w = h = 0;
-        setBusy('AI를 쓸 수 없어 기본 화질업으로 저장해요'); await new Promise(r => setTimeout(r, 1200));
+        const why = (e && e.message) ? e.message : 'AI를 쓸 수 없어요';
+        setBusy(why + ' → 기본 화질업으로 저장할게요'); await new Promise(r => setTimeout(r, 2200));
       }
     }
     if (!w) [w, h] = mode === 1 ? outSize(sw, sh) : [1200, 1600];
@@ -372,7 +371,12 @@ async function capture(){
       src = bmp; sw = bmp.width; sh = bmp.height;
     }
   }catch(e){}
-  try{ await processShot(src, sw, sh, facing === 'user', new Date()); } finally{ capBusy = false; }
+  try{ await processShot(src, sw, sh, facing === 'user', new Date()); }
+  catch(e){
+    console.error(e); $('#busy').hidden = true;
+    alert('사진 처리 중 문제가 생겼어요: ' + (e && e.message ? e.message : e));
+  }
+  finally{ capBusy = false; }
 }
 async function fromFile(file){
   if (!file) return;
