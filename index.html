@@ -325,36 +325,36 @@ async function aiUpscale(base, setMsg){
 
 let hq = true, ai = false, capBusy = false;
 const nextFrame = () => new Promise(r => setTimeout(r, 40));
-function outSize(sw, sh){
+function outSize(sw, sh, full){
   const wide = sw / sh > 3/4;
-  const w = wide ? sh * 3/4 : sw, h = wide ? sh : sw * 4/3;
+  const w = full ? sw : (wide ? sh * 3/4 : sw), h = full ? sh : (wide ? sh : sw * 4/3);
   const k = Math.min(1, Math.sqrt(48e6 / (w * h))); // 브라우저 캔버스 한계 보호용(일반 사진은 1.0)
   return [Math.round(w * k), Math.round(h * k)];
 }
 const setBusy = t => { $('#busyTxt').textContent = t; };
-async function processShot(src, sw, sh, mirror, date){
+async function processShot(src, sw, sh, mirror, date, full){
   let mode = ai ? 2 : (hq ? 1 : 0), s = src, ssw = sw, ssh = sh, sm = mirror, w = 0, h = 0;
   $('#busy').hidden = false; setBusy(mode ? '화질 올리는 중…' : '저장 중…'); await nextFrame();
   try{
     if (mode === 2){
       try{
-        const wide = sw / sh > 3/4, cw = wide ? sh * 3/4 : sw, ch = wide ? sh : sw * 4/3;
-        const bw = Math.min(864, Math.floor(cw / 24) * 24), bh = bw * 4/3;
-        if (bw < 192) throw new Error('too small');
+        const ar = full ? sw / sh : 3/4, wide = sw / sh > ar, cw = wide ? sh * ar : sw, ch = wide ? sh : sw / ar;
+        const bw = Math.min(864, Math.floor(cw / 24) * 24), bh = Math.round(bw / ar);
+        if (Math.min(bw, bh) < 192) throw new Error('too small');
         const base = document.createElement('canvas'); base.width = bw; base.height = bh;
         const bc = base.getContext('2d', {willReadFrequently:true}); bc.imageSmoothingQuality = 'high';
         if (mirror){ bc.translate(bw, 0); bc.scale(-1, 1); }
         bc.drawImage(src, (sw - cw) / 2, (sh - ch) / 2, cw, ch, 0, 0, bw, bh);
         const up = await aiUpscale(base, setBusy);
         s = up; ssw = up.width; ssh = up.height; sm = false;
-        w = Math.max(up.width, outSize(sw, sh)[0]); h = Math.round(w * 4/3);
+        w = Math.max(up.width, outSize(sw, sh, full)[0]); h = Math.round(w * up.height / up.width);
       }catch(e){
         console.error(e); mode = 1; w = h = 0;
         const why = (e && e.message) ? e.message : 'AI를 쓸 수 없어요';
         setBusy(why + ' → 기본 화질업으로 저장할게요'); await new Promise(r => setTimeout(r, 2200));
       }
     }
-    if (!w) [w, h] = outSize(sw, sh);
+    if (!w) [w, h] = outSize(sw, sh, full);
     setBusy('마무리 중…'); await nextFrame();
     const c = document.createElement('canvas'); c.width = w; c.height = h;
     render(c.getContext('2d', {willReadFrequently:true}), w, h, s, ssw, ssh, PRESETS[cur], sm, date, mode);
@@ -387,7 +387,7 @@ async function fromFile(file){
   try{ bmp = await createImageBitmap(file, {imageOrientation:'from-image'}); }
   catch(e){ bmp = await createImageBitmap(file); }
   $('#msg').hidden = true;
-  await processShot(bmp, bmp.width, bmp.height, false, new Date(file.lastModified || Date.now()));
+  await processShot(bmp, bmp.width, bmp.height, false, new Date(file.lastModified || Date.now()), true);
 }
 async function save(){
   if (!lastBlob) return;
