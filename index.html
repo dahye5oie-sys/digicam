@@ -251,7 +251,9 @@ function loop(t){
   requestAnimationFrame(loop);
   if (t - last < 40 || cam.readyState < 2 || !cam.videoWidth) return;
   last = t;
-  render(vctx, 360, 480, cam, cam.videoWidth, cam.videoHeight, PRESETS[cur], facing === 'user', new Date());
+  const vw = cam.videoWidth, vh = cam.videoHeight, k = 640 / Math.max(vw, vh), pw = Math.round(vw * k), ph = Math.round(vh * k);
+  if (view.width !== pw || view.height !== ph){ view.width = pw; view.height = ph; }
+  render(vctx, pw, ph, cam, vw, vh, PRESETS[cur], facing === 'user', new Date());
 }
 requestAnimationFrame(loop);
 
@@ -328,7 +330,7 @@ const nextFrame = () => new Promise(r => setTimeout(r, 40));
 function outSize(sw, sh, full){
   const wide = sw / sh > 3/4;
   const w = full ? sw : (wide ? sh * 3/4 : sw), h = full ? sh : (wide ? sh : sw * 4/3);
-  const k = Math.min(1, Math.sqrt(48e6 / (w * h))); // 브라우저 캔버스 한계 보호용(일반 사진은 1.0)
+  const k = Math.min(1, Math.sqrt(120e6 / (w * h))); // 브라우저 캔버스 한계 보호용(일반 사진은 1.0)
   return [Math.round(w * k), Math.round(h * k)];
 }
 const setBusy = t => { $('#busyTxt').textContent = t; };
@@ -374,7 +376,7 @@ async function capture(){
       src = bmp; sw = bmp.width; sh = bmp.height;
     }
   }catch(e){}
-  try{ await processShot(src, sw, sh, facing === 'user', new Date()); }
+  try{ await processShot(src, sw, sh, facing === 'user', new Date(), true); }
   catch(e){
     console.error(e); $('#busy').hidden = true;
     alert('사진 처리 중 문제가 생겼어요: ' + (e && e.message ? e.message : e));
